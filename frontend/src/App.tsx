@@ -1,24 +1,18 @@
 import { useEffect, useState } from "react";
 
-// Define the shape of a Todo item for TypeScript
 interface Todo {
   id: number;
   title: string;
   done: boolean;
 }
 
-/**
- * Fetches all todos from the backend API.
- */
+// --- API Helpers ---
 async function fetchTodos(): Promise<Todo[]> {
   const res = await fetch("http://localhost:3000/todos");
   if (!res.ok) throw new Error("Failed to fetch todos");
   return res.json();
 }
 
-/**
- * Creates a new todo item.
- */
 async function createTodo(title: string) {
   await fetch("http://localhost:3000/todos", {
     method: "POST",
@@ -27,9 +21,6 @@ async function createTodo(title: string) {
   });
 }
 
-/**
- * Updates an existing todo item by its ID.
- */
 async function updateTodo(id: number, title: string, done: boolean) {
   await fetch(`http://localhost:3000/todos/${id}`, {
     method: "PUT",
@@ -38,76 +29,60 @@ async function updateTodo(id: number, title: string, done: boolean) {
   });
 }
 
-/**
- * Deletes a todo item by its ID.
- */
 async function deleteTodo(id: number) {
-  await fetch(`http://localhost:3000/todos/${id}`, {
-    method: "DELETE",
-  });
+  await fetch(`http://localhost:3000/todos/${id}`, { method: "DELETE" });
 }
 
-// --- Main Application Component ---
-
+// --- App Component ---
 function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTitle, setNewTitle] = useState("");
-  const [isDark, setIsDark] = useState(false);
+  
+  // Initial Dark Mode State synchron
+  const getInitialDark = () => {
+    const saved = localStorage.getItem("theme");
+    if (saved === "dark") return true;
+    if (saved === "light") return false;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  const [isDark, setIsDark] = useState(getInitialDark);
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
-  // Effect to load initial todos on component mount (Read)
+  // Load Todos & Apply Dark Mode
   useEffect(() => {
-    // Also load theme preference from localStorage
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark") setIsDark(true);
-
     fetchTodos().then(setTodos).catch(console.error);
   }, []);
 
-  // Effect to apply the dark class to the HTML element and save preference (Theme persistence)
+  // Dark Mode effect
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
     localStorage.setItem("theme", isDark ? "dark" : "light");
   }, [isDark]);
 
-  /**
-   * Helper function to refresh the todo list after any mutation.
-   */
   const refreshTodos = async () => {
     const updated = await fetchTodos();
     setTodos(updated);
   };
 
-  /**
-   * Handles adding a new todo item (Create).
-   */
   const handleAdd = async () => {
     if (!newTitle.trim()) return;
     await createTodo(newTitle);
     setNewTitle("");
     await refreshTodos();
   };
-  
-  /**
-   * Handles toggling the 'done' state of a todo (Update).
-   */
+
   const handleToggleDone = async (todo: Todo) => {
     await updateTodo(todo.id, todo.title, !todo.done);
     await refreshTodos();
   };
 
-  /**
-   * Handles starting the edit process for a todo.
-   */
   const handleStartEdit = (todo: Todo) => {
     setEditingId(todo.id);
     setEditTitle(todo.title);
   };
-  
-  /**
-   * Handles saving the edited title (Update).
-   */
+
   const handleSaveEdit = async (todo: Todo) => {
     if (!editTitle.trim()) return;
     await updateTodo(todo.id, editTitle, todo.done);
@@ -116,9 +91,6 @@ function App() {
     await refreshTodos();
   };
 
-  /**
-   * Handles deleting a todo item (Delete).
-   */
   const handleDelete = async (id: number) => {
     await deleteTodo(id);
     await refreshTodos();
@@ -127,8 +99,7 @@ function App() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans px-4">
       <div className="max-w-xl mx-auto pt-10">
-        
-        {/* --- Header and Dark Mode Toggle --- */}
+        {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Todo List</h1>
           <button
@@ -139,7 +110,7 @@ function App() {
           </button>
         </div>
 
-        {/* --- New Todo Input (Create) --- */}
+        {/* New Todo */}
         <div className="flex gap-2 mb-8">
           <input
             value={newTitle}
@@ -158,7 +129,7 @@ function App() {
           </button>
         </div>
 
-        {/* --- Todo List (Read, Update, Delete) --- */}
+        {/* Todo List */}
         <ul className="space-y-3">
           {todos.map((todo) => (
             <li 
@@ -167,18 +138,17 @@ function App() {
                          bg-gray-50 dark:bg-gray-800 shadow-sm"
             >
               {editingId === todo.id ? (
-                // Edit Mode
                 <div className="flex flex-1 gap-2 items-center">
                   <input
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    className="flex-1 border px-2 py-1 rounded 
-                               bg-white dark:bg-gray-700 dark:text-white"
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveEdit(todo);
-                        if (e.key === 'Escape') setEditingId(null);
+                      if (e.key === "Enter") handleSaveEdit(todo);
+                      if (e.key === "Escape") setEditingId(null);
                     }}
                     autoFocus
+                    className="flex-1 border px-2 py-1 rounded 
+                               bg-white dark:bg-gray-700 dark:text-white"
                   />
                   <button 
                     onClick={() => handleSaveEdit(todo)}
@@ -194,7 +164,6 @@ function App() {
                   </button>
                 </div>
               ) : (
-                // View Mode
                 <div className="flex flex-1 items-center gap-3">
                   <input
                     type="checkbox"
@@ -204,12 +173,10 @@ function App() {
                   />
                   <span 
                     className={`flex-1 ${todo.done ? 'line-through text-gray-500 dark:text-gray-400' : ''}`}
-                    onDoubleClick={() => handleStartEdit(todo)} // Double-click to start edit
+                    onDoubleClick={() => handleStartEdit(todo)}
                   >
                     {todo.title}
                   </span>
-                  
-                  {/* Action Buttons */}
                   <button
                     onClick={() => handleStartEdit(todo)}
                     className="text-sm text-blue-500 hover:text-blue-700 dark:hover:text-blue-400 p-1"

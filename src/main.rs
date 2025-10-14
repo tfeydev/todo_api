@@ -5,6 +5,7 @@ use tracing_subscriber;
 
 mod db;
 mod routes; // Contains all Axum route handlers and the router logic
+mod error;  // Centralized error handling module
 
 #[tokio::main]
 async fn main() {
