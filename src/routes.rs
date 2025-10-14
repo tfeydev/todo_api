@@ -1,18 +1,28 @@
 use axum::{
     extract::{State, Path},
     http::StatusCode,
-    routing::{get, post, put, delete},
+    routing::{get, put, post, delete}, // Added post and delete for clarity, though routing is fine
     Json, Router,
 };
 use serde::{Serialize, Deserialize};
 use sqlx::PgPool;
 
+use reqwest; // NEW: HTTP client for Julia communication
+use serde_json::json; // NEW: To easily construct JSON for Julia
+
+/// Struct to deserialize the JSON response from the Julia server
+#[derive(serde::Deserialize)]
+struct ScoreResponse {
+    score: f64,
+}
+
 /// The Todo model struct, used for sending and receiving todo items.
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, Deserialize, sqlx::FromRow)] // Added Deserialize for completeness
 pub struct Todo {
     pub id: i32,
     pub title: String,
     pub done: bool,
+    pub score: f64 // NEW FIELD: Julia's output
 }
 
 /// Request payload for creating a new todo item.
@@ -32,7 +42,8 @@ pub struct UpdateTodo {
 ///
 /// GET /todos
 pub async fn get_todos(State(pool): State<PgPool>) -> Json<Vec<Todo>> {
-    let todos = sqlx::query_as::<_, Todo>("SELECT * FROM todos ORDER BY id")
+    // UPDATED SQL: Must select the new 'score' field
+    let todos = sqlx::query_as::<_, Todo>("SELECT id, title, done, score FROM todos ORDER BY id")
         .fetch_all(&pool)
         .await
         .expect("Failed to fetch todos");
@@ -40,15 +51,36 @@ pub async fn get_todos(State(pool): State<PgPool>) -> Json<Vec<Todo>> {
     Json(todos)
 }
 
-/// Handler to create a new todo item.
+/// Handler to create a new todo item, contacting Julia for the score.
 ///
 /// POST /todos
 pub async fn create_todo(
     State(pool): State<PgPool>,
     Json(payload): Json<NewTodo>,
 ) -> StatusCode {
-    sqlx::query("INSERT INTO todos (title, done) VALUES ($1, FALSE)")
+    
+    // --- JULIA INTEGRATION LOGIC ---
+    // 1. CALL THE JULIA MICROSERVICE
+    let client = reqwest::Client::new();
+    let julia_response = client
+        .post("http://127.0.0.1:8081/score") 
+        .json(&json!({ "title": payload.title }))
+        .send()
+        .await
+        .expect("Failed to communicate with the Julia service at http://127.00.1:8081"); 
+
+    let score_data = julia_response
+        .json::<ScoreResponse>()
+        .await
+        .expect("Failed to parse JSON response from Julia service"); 
+
+    let score = score_data.score;
+    // --- END JULIA INTEGRATION LOGIC ---
+
+    // 2. SAVE TO THE DATABASE (including the new score)
+    sqlx::query("INSERT INTO todos (title, done, score) VALUES ($1, FALSE, $2)")
         .bind(&payload.title)
+        .bind(score) // Bind the score from Julia
         .execute(&pool)
         .await
         .expect("Failed to insert todo");
@@ -65,6 +97,8 @@ pub async fn update_todo(
     Path(id): Path<i32>,
     Json(payload): Json<UpdateTodo>,
 ) -> StatusCode {
+    // NOTE: This handler could also call Julia to update the score if title changes, 
+    // but for now, we leave the logic simple.
     sqlx::query("UPDATE todos SET title = $1, done = $2 WHERE id = $3")
         .bind(&payload.title)
         .bind(&payload.done)
