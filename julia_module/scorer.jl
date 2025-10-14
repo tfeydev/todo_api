@@ -1,5 +1,8 @@
 # julia_module/scorer.jl
 
+using Pkg 
+Pkg.activate(@__DIR__) 
+
 using HTTP
 using JSON3
 
