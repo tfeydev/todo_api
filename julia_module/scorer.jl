@@ -1,7 +1,7 @@
 # julia_module/scorer.jl
 
-using Pkg 
-Pkg.activate(@__DIR__) 
+using Pkg
+Pkg.activate(@__DIR__)
 
 using HTTP
 using JSON3
@@ -15,7 +15,7 @@ function calculate_score(title::String)::Float64
     score = 0.0
 
     # 1. Base score based on title length (longer tasks are generally more complex)
-    score += length(title) * 0.1 
+    score += length(title) * 0.1
 
     # 2. Bonus score for specific keywords
     if occursin("Refactor", title) || occursin("refactor", title)
@@ -33,14 +33,18 @@ end
 # HTTP handler to process the POST request
 const ROUTER = HTTP.Router()
 
+HTTP.register!(ROUTER, "GET", "/score", req -> begin
+    return HTTP.Response(405, "Method Not Allowed. Use POST to calculate the score.")
+end)
+
 HTTP.register!(ROUTER, "POST", "/score", req -> begin
     # Check for correct Content-Type
-    if HTTP.hasheader(req, "Content-Type" => "application/json")
+    if HTTP.hasheader(req, "Content-Type") && HTTP.header(req, "Content-Type") == "application/json"
         try
             # Parse JSON body
             data = JSON3.read(IOBuffer(HTTP.payload(req)))
             title = String(data[:title])
-            
+
             # Calculate and round the score
             score = calculate_score(title)
 
