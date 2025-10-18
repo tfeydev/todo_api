@@ -1,62 +1,62 @@
-use thiserror::Error;
-use axum::response::{Response, IntoResponse};
-use axum::http::StatusCode;
+// src/error.rs (FINAL)
+
+use axum::{
+    response::{IntoResponse, Response},
+    http::StatusCode,
+    Json,
+};
 use serde_json::json;
 
-/// Central error type for the application.
-/// It wraps errors from SQLx (database) and Reqwest (Julia service).
-#[derive(Debug, Error)]
+// --- AppError Definition ---
+
+#[derive(Debug)]
 pub enum AppError {
-    
-    // 1. Database Errors (e.g., connection, query failure, decode issues)
-    // The #[from] attribute automatically converts sqlx::Error into AppError::Sqlx.
-    #[error("Database error occurred: {0}")]
-    Sqlx(#[from] sqlx::Error),
-    
-    // 2. Reqwest Errors (Network errors when contacting Julia, including connection failures,
-    // timeout, or errors during JSON parsing/status code checks).
-    #[error("Network or parsing error with Julia service: {0}")]
-    Reqwest(#[from] reqwest::Error),
-    
-    // 3. Custom Error: If a requested resource is not found (e.g., Todo item by ID)
-    #[error("Resource not found.")]
+    Sqlx(sqlx::Error),
     NotFound,
+    Message(String),
+    Unauthorized, // For missing/invalid JWT token
+    Reqwest(reqwest::Error),
 }
 
-// Implement conversion from AppError to an HTTP Response for Axum.
+// Implement From traits (for easy conversion)
+impl From<sqlx::Error> for AppError {
+    fn from(e: sqlx::Error) -> Self { AppError::Sqlx(e) }
+}
+impl From<reqwest::Error> for AppError {
+    fn from(e: reqwest::Error) -> Self { AppError::Reqwest(e) }
+}
+
+
+// --- AppError to HTTP Response Conversion ---
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        
-        // Define the HTTP status code and a user-friendly message for the client.
-        let (status, client_message) = match self {
-            
-            // 1. SQLx Errors
+        let (status, error_message) = match self {
             AppError::Sqlx(e) => {
-                // Log the detailed error internally for debugging.
-                eprintln!("SQLx Error: {:?}", e); 
-                (StatusCode::INTERNAL_SERVER_ERROR, "A server error occurred during database operation.".to_string())
+                eprintln!("SQLx Error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "A database error occurred.".to_string())
             }
-            
-            // 2. Reqwest Errors (Julia communication)
-            AppError::Reqwest(e) => {
-                // Log the detailed error internally.
-                eprintln!("Reqwest Error: {:?}", e); 
-                // Use SERVICE_UNAVAILABLE if the dependency (Julia) is down or unresponsive.
-                (StatusCode::SERVICE_UNAVAILABLE, "The external scoring service is currently unreachable or returned an invalid response.".to_string())
-            }
-
-            // 3. Not Found Errors (e.g., requested ID doesn't exist)
             AppError::NotFound => {
-                (StatusCode::NOT_FOUND, "The requested resource was not found.".to_string())
+                (StatusCode::NOT_FOUND, "Resource not found".to_string())
+            }
+            AppError::Message(msg) => {
+                (StatusCode::BAD_REQUEST, msg)
+            }
+            AppError::Reqwest(e) => {
+                (StatusCode::BAD_GATEWAY, format!("External service failed: {}", e))
+            }
+            // CRITICAL: Explicitly send 401 when authorization fails
+            AppError::Unauthorized => {
+                (StatusCode::UNAUTHORIZED, "Missing or invalid authorization token.".to_string())
             }
         };
 
-        // Return a structured JSON response to the client.
-        (
-            status,
-            axum::Json(json!({
-                "error": client_message,
-            })),
-        ).into_response()
+        // Standard JSON error body structure
+        let body = Json(json!({
+            "status_code": status.as_u16(),
+            "message": error_message,
+        }));
+
+        (status, body).into_response()
     }
 }
