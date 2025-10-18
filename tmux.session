@@ -1,0 +1,19 @@
+# Start tmux Session "todo_api"
+new-session -d -s todo_api -n frontend
+
+# Window 0: React-Frontend
+send-keys "cd frontend && npm run dev" C-m
+
+# Window 1: Rust-Backend
+new-window -n backend
+send-keys "cd $(pwd) && cargo run" C-m
+
+# Window 2: Julia-Module
+new-window -n julia
+send-keys "cd julia_module && julia scorer.jl" C-m
+
+# activate default window
+select-window -t 0
+
+# adding session
+attach-session -t todo_api
